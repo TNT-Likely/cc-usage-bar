@@ -619,9 +619,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         refreshIt.keyEquivalentModifierMask = []
         menu.addItem(refreshIt)
 
-        let quit = NSMenuItem(title: "退出 CCUsageBar", action: #selector(NSApplication.terminate(_:)),
+        let quit = NSMenuItem(title: "退出 CCUsageBar", action: #selector(quitAndStopAgent),
                               keyEquivalent: "q")
+        quit.target = self
         quit.keyEquivalentModifierMask = [.command]
+        quit.toolTip = "若由 LaunchAgent 托管,退出同时卸载本次会话的自动拉起(重新登录后恢复)"
         menu.addItem(quit)
     }
 
@@ -633,6 +635,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc func doRefresh() {
         lastQuotaAttempt = .distantPast // 强制重新拉额度
         refresh()
+    }
+
+    /// 退出:若由 LaunchAgent 托管,先卸载,避免 launchd 的 KeepAlive 把进程重新拉起
+    @objc func quitAndStopAgent() {
+        // 在 ~/Library/LaunchAgents 里找指向本 app 的 plist,取其真实 Label
+        let dir = NSHomeDirectory() + "/Library/LaunchAgents"
+        var label: String?
+        if let files = try? FileManager.default.contentsOfDirectory(atPath: dir) {
+            for f in files where f.hasSuffix(".plist") {
+                guard let data = FileManager.default.contents(atPath: dir + "/" + f),
+                      let obj = try? PropertyListSerialization.propertyList(
+                        from: data, options: [], format: nil) as? [String: Any],
+                      let args = obj["ProgramArguments"] as? [String],
+                      args.contains(where: { $0.hasSuffix("CCUsageBar.app/Contents/MacOS/CCUsageBar") })
+                else { continue }
+                let l = (obj["Label"] as? String) ?? (f as NSString).deletingPathExtension
+                if !l.contains("'") { label = l }
+                break
+            }
+        }
+        guard let label else { NSApp.terminate(nil); return }
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/bin/sh")
+        p.arguments = ["-c", "launchctl bootout gui/$(id -u)/'\(label)' >/dev/null 2>&1; exit 0"]
+        try? p.run()
+        // bootout 会向本进程发 SIGTERM;若 2 秒后仍在(如本就未加载),正常退出兜底
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+            NSApp.terminate(nil)
+        }
     }
 }
 

@@ -28,10 +28,13 @@ A macOS menu bar app that shows live AI usage & cost from the [cc-switch](https:
 需要 macOS 13+ 和 Xcode 命令行工具,无其他依赖:
 
 ```bash
-./build.sh                                                # 编译并打包到 ~/Applications/CCUsageBar.app
-nohup ~/Applications/CCUsageBar.app/Contents/MacOS/CCUsageBar &   # 启动
-pkill -f MacOS/CCUsageBar                                 # 停止
+./build.sh                                                                      # 编译并打包到 ~/Applications/CCUsageBar.app
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/local.ccusagebar.plist  # 启动(需先按下方模板安装 LaunchAgent)
 ```
+
+退出:菜单里点「退出 CCUsageBar」即可——若由 LaunchAgent 托管会同时卸载本次会话的自动拉起,不会被 launchd 重新拉活;重新登录后照常自启。
+
+未安装 LaunchAgent 时,也可以直接运行二进制:`nohup ~/Applications/CCUsageBar.app/Contents/MacOS/CCUsageBar &`
 
 ### 开机自启(LaunchAgent)
 
